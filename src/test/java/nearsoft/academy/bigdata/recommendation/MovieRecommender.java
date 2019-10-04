@@ -12,7 +12,12 @@ import org.apache.mahout.cf.taste.recommender.UserBasedRecommender;
 import org.apache.mahout.cf.taste.similarity.UserSimilarity;
 
 import java.io.*;
-import java.util.*;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
 
 class MovieRecommender {
     private int reviewCount = 0;
@@ -28,52 +33,47 @@ class MovieRecommender {
         // Create temporary csv file to plug into mahout.
         File temporaryCsv = new File("dataset.csv");
         BufferedWriter bw = new BufferedWriter(new FileWriter(temporaryCsv));
-        BufferedReader br = new BufferedReader(new FileReader(new File(pathToFile)));
-        String csvLine = "";
-        System.out.println("Reading movies.txt file");
+
+        InputStream stream = new GZIPInputStream(new FileInputStream(pathToFile));
+        BufferedReader br = new BufferedReader(new InputStreamReader(stream, StandardCharsets.US_ASCII));
+
+        int currentUserId = 0;
+        int currentProductId = 0;
         for (String line = br.readLine(); line != null; line = br.readLine()) {
             // Users
-//            "review/userId: A1RSDE90N6RSZF" <- line format for user(it comes second)
+            // "review/userId: A1RSDE90N6RSZF" <- line format for user(it comes second)
             if (line.contains("review/userId")) {
-                String username = line.split(" ")[1];
-                int userId;
-                if(userMap.containsKey(username)){
-                   userId = userMap.get(username);
-                }else{
-                    userId = nextUserId;
-                    userMap.put(username, nextUserId++);
+                String amazonUserId = line.split(" ")[1];
+                if (!userMap.containsKey(amazonUserId)) {
+                    userMap.put(amazonUserId, nextUserId++);
                 }
-                csvLine = userId + "," + csvLine;
+                currentUserId = userMap.get(amazonUserId);
             }
 
             // Products
-//            product/productId: B00006HAXW <- line format for product (it comes first)
+            // product/productId: B00006HAXW <- line format for product (it comes first)
             if (line.contains("product/productId")) {
-                String product = line.split(" ")[1];
-                int productId;
-                if(productMap.containsKey(product)){
-                    productId = productMap.get(product);
-                }else{
-                    productId = nextProductId;
-                    productMap.put(product, nextProductId++);
+                String amazonProductId = line.split(" ")[1];
+                if (!productMap.containsKey(amazonProductId)) {
+                    productMap.put(amazonProductId, nextProductId++);
                 }
-                csvLine = productId + ",";
+                currentProductId = productMap.get(amazonProductId);
             }
 
             // Score
-//            review/score: 5.0 <- line format for score (it comes last)
-            if (line.contains("review/score")){
-                csvLine += line.split(" ")[1] + "\n";
-                bw.write(csvLine);
-                reviewCount++; // Each score
+            // review/score: 5.0 <- line format for score (it comes last)
+            if (line.contains("review/score")) {
+                // Format for apache mahout -> user,product,score
+                bw.write(currentUserId + "," + currentProductId + "," + line.split(" ")[1] + "\n");
+                reviewCount++; // Each score is a new review
             }
         }
-        System.out.println("Finished reading movies.txt");
+        bw.close();
+        br.close();
 
         // Create an array of products to retrieve the product name with it's id later.
-        System.out.println("Constructing products array");
         products = new String[productMap.size()];
-        for(Map.Entry<String, Integer> me : productMap.entrySet()){
+        for (Map.Entry<String, Integer> me : productMap.entrySet()) {
             products[me.getValue()] = me.getKey();
         }
 
@@ -83,17 +83,13 @@ class MovieRecommender {
         UserNeighborhood neighborhood = new ThresholdUserNeighborhood(0.1, similarity, model);
         this.recommender = new GenericUserBasedRecommender(model, neighborhood, similarity);
 
-        if(temporaryCsv.delete()){
-            System.out.println("Deleted temporary dataset successfully");
-        }else{
-            System.out.println("Failed to delete temp dataset");
-        }
+        temporaryCsv.delete();
     }
 
     List<String> getRecommendationsForUser(String user) throws TasteException {
         List<String> recommendations = new ArrayList<>();
-        for(RecommendedItem ri : recommender.recommend(userMap.get(user), 5)){
-            recommendations.add(products[(int)ri.getItemID()]);
+        for (RecommendedItem recommendedItem : recommender.recommend(userMap.get(user), 3)) {
+            recommendations.add(products[(int) recommendedItem.getItemID()]);
         }
         return recommendations;
     }
