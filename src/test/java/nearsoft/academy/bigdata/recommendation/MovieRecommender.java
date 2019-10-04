@@ -14,30 +14,29 @@ import org.apache.mahout.cf.taste.similarity.UserSimilarity;
 import java.io.*;
 import java.util.*;
 
-public class MovieRecommender {
-    public static void main(String[] args) throws Exception {
-        MovieRecommender recommender = new MovieRecommender("/Users/jsinohui/Documents/movies.txt");
-        recommender.getRecommendationsForUser("A141HP4LYPWMSR");
-    }
-
-    private long nextUserId = 0;
-    private long nextProductId = 0;
-    private long reviewCount = 0;
-    Map<String, Long> userMap = new HashMap<>();
-    Map<String, Long> productMap = new HashMap<>();
-    UserBasedRecommender recommender;
-    String[] products;
+class MovieRecommender {
+    private int reviewCount = 0;
+    private Map<String, Integer> userMap = new HashMap<>();
+    private Map<String, Integer> productMap = new HashMap<>();
+    private UserBasedRecommender recommender;
+    private String[] products;
 
     MovieRecommender(String pathToFile) throws IOException, TasteException {
-        BufferedWriter bw = new BufferedWriter(new FileWriter(new File("dataset.csv")));
+        int nextUserId = 0;
+        int nextProductId = 0;
 
+        // Create temporary csv file to plug into mahout.
+        File temporaryCsv = new File("dataset.csv");
+        BufferedWriter bw = new BufferedWriter(new FileWriter(temporaryCsv));
         BufferedReader br = new BufferedReader(new FileReader(new File(pathToFile)));
         String csvLine = "";
+        System.out.println("Reading movies.txt file");
         for (String line = br.readLine(); line != null; line = br.readLine()) {
             // Users
+//            "review/userId: A1RSDE90N6RSZF" <- line format for user(it comes second)
             if (line.contains("review/userId")) {
                 String username = line.split(" ")[1];
-                Long userId;
+                int userId;
                 if(userMap.containsKey(username)){
                    userId = userMap.get(username);
                 }else{
@@ -48,9 +47,10 @@ public class MovieRecommender {
             }
 
             // Products
+//            product/productId: B00006HAXW <- line format for product (it comes first)
             if (line.contains("product/productId")) {
                 String product = line.split(" ")[1];
-                Long productId;
+                int productId;
                 if(productMap.containsKey(product)){
                     productId = productMap.get(product);
                 }else{
@@ -61,24 +61,33 @@ public class MovieRecommender {
             }
 
             // Score
+//            review/score: 5.0 <- line format for score (it comes last)
             if (line.contains("review/score")){
                 csvLine += line.split(" ")[1] + "\n";
                 bw.write(csvLine);
-                reviewCount++;
+                reviewCount++; // Each score
             }
         }
+        System.out.println("Finished reading movies.txt");
+
+        // Create an array of products to retrieve the product name with it's id later.
+        System.out.println("Constructing products array");
         products = new String[productMap.size()];
-        for(Map.Entry<String, Long> me : productMap.entrySet()){
-            products[me.getValue().intValue()] = me.getKey();
+        for(Map.Entry<String, Integer> me : productMap.entrySet()){
+            products[me.getValue()] = me.getKey();
         }
 
-        bw.flush();
-
+        // Create recommender
         DataModel model = new FileDataModel(new File("dataset.csv"));
         UserSimilarity similarity = new PearsonCorrelationSimilarity(model);
         UserNeighborhood neighborhood = new ThresholdUserNeighborhood(0.1, similarity, model);
         this.recommender = new GenericUserBasedRecommender(model, neighborhood, similarity);
 
+        if(temporaryCsv.delete()){
+            System.out.println("Deleted temporary dataset successfully");
+        }else{
+            System.out.println("Failed to delete temp dataset");
+        }
     }
 
     List<String> getRecommendationsForUser(String user) throws TasteException {
@@ -89,15 +98,15 @@ public class MovieRecommender {
         return recommendations;
     }
 
-    public long getTotalReviews() {
+    long getTotalReviews() {
         return reviewCount;
     }
 
-    public int getTotalProducts() {
+    int getTotalProducts() {
         return productMap.size();
     }
 
-    public int getTotalUsers() {
+    int getTotalUsers() {
         return userMap.size();
     }
 }
